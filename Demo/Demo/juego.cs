@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace JuegoTablero
@@ -48,45 +47,65 @@ namespace JuegoTablero
             {
                 for (int j = 0; j < Tamaño; j++)
                 {
-                    Console.Write(Casillas[i, j].Propietario + "\t");
+                    if (Casillas[i, j].Propietario == "Ninguno")
+                        Console.Write("( )\t");
+                    else
+                    {
+                        string playerNumber = Casillas[i, j].Propietario.Split(' ')[1];
+                        Console.Write($"(J{playerNumber})\t");
+                    }
                 }
                 Console.WriteLine();
             }
         }
 
-        public void MoverJugador(int x, int y, string nombreJugador, Jugador jugador, List<Jugador> jugadores)
+        public bool MoverJugador(int x, int y, string nombreJugador, Jugador jugador, List<Jugador> jugadores)
         {
-            if (Casillas[x, y].Propietario != "Ninguno" && Casillas[x, y].Propietario != nombreJugador)
+            if (Casillas[x, y].Propietario != "Ninguno")
             {
-                Console.WriteLine($"{nombreJugador} ha eliminado a {Casillas[x, y].Propietario}!");
-                MarcarCasillasDeJugadorEliminado(Casillas[x, y].Propietario, nombreJugador, jugador, jugadores);
+                if (Casillas[x, y].Propietario != nombreJugador)
+                {
+                    Jugador oponente = jugadores.Find(j => j.Nombre == Casillas[x, y].Propietario);
+                    if (oponente != null)
+                    {
+                        bool jugadorGanaDuelo = Duelo.IniciarDuelo(jugador, oponente);
+                        if (jugadorGanaDuelo)
+                        {
+                            Console.WriteLine($"{nombreJugador} ha ganado el duelo y toma todas las casillas de {oponente.Nombre}!");
+                            MarcarCasillasDeJugadorEliminado(oponente.Nombre, nombreJugador, jugador, jugadores);
+                            return true;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"{oponente.Nombre} ha ganado el duelo. {nombreJugador} ha sido eliminado del juego.");
+                            jugador.CasillasPoseidas = 0;
+                            jugador.PosicionesConquistadas.Clear();
+                            return false;
+                        }
+                    }
+                }
+                return false; // La casilla ya está ocupada por el jugador actual
             }
             Casillas[x, y].Marcar(nombreJugador);
             jugador.CasillasPoseidas++;
+            jugador.ActualizarPosicionesConquistadas(x, y);
+            return true;
         }
 
         private void MarcarCasillasDeJugadorEliminado(string jugadorEliminado, string nuevoPropietario, Jugador nuevoJugador, List<Jugador> jugadores)
         {
-            foreach (Jugador jugador in jugadores)
+            Jugador jugadorAEliminar = jugadores.Find(j => j.Nombre == jugadorEliminado);
+            if (jugadorAEliminar != null)
             {
-                if (jugador.Nombre == jugadorEliminado)
+                foreach (var posicion in jugadorAEliminar.PosicionesConquistadas)
                 {
-                    jugador.CasillasPoseidas = 0;
-                    jugadores.Remove(jugador);
-                    break;
+                    Casillas[posicion.x, posicion.y].Marcar(nuevoPropietario);
+                    nuevoJugador.CasillasPoseidas++;
+                    nuevoJugador.ActualizarPosicionesConquistadas(posicion.x, posicion.y);
                 }
-            }
-
-            for (int i = 0; i < Tamaño; i++)
-            {
-                for (int j = 0; j < Tamaño; j++)
-                {
-                    if (Casillas[i, j].Propietario == jugadorEliminado)
-                    {
-                        Casillas[i, j].Marcar(nuevoPropietario);
-                        nuevoJugador.CasillasPoseidas++;
-                    }
-                }
+                jugadorAEliminar.CasillasPoseidas = 0;
+                jugadorAEliminar.PosicionesConquistadas.Clear();
+                jugadores.Remove(jugadorAEliminar);
             }
         }
     }
@@ -95,90 +114,150 @@ namespace JuegoTablero
     {
         public string Nombre { get; set; }
         public int CasillasPoseidas { get; set; }
-        private List<(int x, int y)> posicionesConquistadas;
+        public List<(int x, int y)> PosicionesConquistadas { get; private set; }
 
-        public Jugador(string nombre, int x, int y, Tablero tablero)
+        public Jugador(string nombre)
         {
             Nombre = nombre;
-            CasillasPoseidas = 1;
-            posicionesConquistadas = new List<(int x, int y)>();
-            posicionesConquistadas.Add((x, y));
-
-            // Marcar la posición inicial en el tablero
-            tablero.MoverJugador(x, y, nombre, this, null);
+            CasillasPoseidas = 0;
+            PosicionesConquistadas = new List<(int x, int y)>();
         }
 
         public bool MoverA(int nuevaX, int nuevaY, Tablero tablero, List<Jugador> jugadores)
         {
-            // Verificar si las nuevas coordenadas están dentro de los límites del tablero
             if (nuevaX < 0 || nuevaX >= tablero.Tamaño || nuevaY < 0 || nuevaY >= tablero.Tamaño)
             {
                 Console.WriteLine("Movimiento inválido. Las coordenadas están fuera del tablero.");
                 return false;
             }
 
-            // Verificar si la casilla es adyacente a alguna casilla conquistada
-            foreach (var pos in posicionesConquistadas)
+            if (CasillasPoseidas == 0 || EsMovimientoAdyacente(nuevaX, nuevaY))
             {
-                int diffX = Math.Abs(nuevaX - pos.x);
-                int diffY = Math.Abs(nuevaY - pos.y);
-
-                if (diffX <= 1 && diffY <= 1 && !(diffX == 1 && diffY == 1)) // Verificar adyacencia
-                {
-                    // Mover el jugador
-                    tablero.MoverJugador(nuevaX, nuevaY, Nombre, this, jugadores);
-
-                    // Agregar nueva posición a las conquistadas
-                    if (!posicionesConquistadas.Contains((nuevaX, nuevaY)))
-                    {
-                        posicionesConquistadas.Add((nuevaX, nuevaY));
-                    }
-
-                    return true;
-                }
+                return tablero.MoverJugador(nuevaX, nuevaY, Nombre, this, jugadores);
             }
 
             Console.WriteLine("Movimiento inválido. Solo puedes moverte a posiciones adyacentes a tus casillas conquistadas.");
             return false;
         }
 
-        public void MostrarCasillasAdyacentes(Tablero tablero)
+        private bool EsMovimientoAdyacente(int x, int y)
         {
-            Console.WriteLine($"Casillas adyacentes para {Nombre}:");
-
-            HashSet<(int x, int y)> adyacentes = new HashSet<(int x, int y)>();
-
-            foreach (var pos in posicionesConquistadas)
+            foreach (var pos in PosicionesConquistadas)
             {
-                int x = pos.x;
-                int y = pos.y;
+                int diffX = Math.Abs(x - pos.x);
+                int diffY = Math.Abs(y - pos.y);
+                if (diffX <= 1 && diffY <= 1 && !(diffX == 1 && diffY == 1))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
+        public void ActualizarPosicionesConquistadas(int x, int y)
+        {
+            if (!PosicionesConquistadas.Contains((x, y)))
+            {
+                PosicionesConquistadas.Add((x, y));
+            }
+        }
+
+        public void MostrarCasillasDisponibles(Tablero tablero)
+        {
+            Console.WriteLine($"Casillas disponibles para {Nombre}:");
+            if (CasillasPoseidas == 0)
+            {
+                Console.WriteLine("Puedes moverte a cualquier casilla vacía del tablero.");
+                return;
+            }
+
+            HashSet<(int x, int y)> casillasDisponibles = new HashSet<(int x, int y)>();
+
+            foreach (var pos in PosicionesConquistadas)
+            {
                 List<(int x, int y)> posiblesAdyacentes = new List<(int x, int y)>
                 {
-                    (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)
+                    (pos.x - 1, pos.y), (pos.x + 1, pos.y), (pos.x, pos.y - 1), (pos.x, pos.y + 1)
                 };
 
                 foreach (var adyacente in posiblesAdyacentes)
                 {
                     if (adyacente.x >= 0 && adyacente.x < tablero.Tamaño && adyacente.y >= 0 && adyacente.y < tablero.Tamaño)
                     {
-                        adyacentes.Add(adyacente);
+                        casillasDisponibles.Add(adyacente);
                     }
                 }
             }
 
-            foreach (var adyacente in adyacentes)
+            foreach (var casilla in casillasDisponibles)
             {
-                string propietario = tablero.Casillas[adyacente.x, adyacente.y].Propietario;
-                if (propietario == "Ninguno")
-                {
-                    Console.WriteLine($"({adyacente.x}, {adyacente.y}) - Libre");
-                }
-                else
-                {
-                    Console.WriteLine($"({adyacente.x}, {adyacente.y}) - Ocupada por {propietario}");
-                }
+                string propietario = tablero.Casillas[casilla.x, casilla.y].Propietario;
+                Console.WriteLine($"({casilla.x}, {casilla.y}) - {(propietario == "Ninguno" ? "Libre" : $"Ocupada por {propietario}")}");
             }
+        }
+    }
+
+    public class Duelo
+    {
+        private static Random random = new Random();
+
+        public static bool IniciarDuelo(Jugador jugador1, Jugador jugador2)
+        {
+            Console.WriteLine($"¡Duelo entre {jugador1.Nombre} y {jugador2.Nombre}!");
+            
+            int puntajeJugador1 = 0;
+            int puntajeJugador2 = 0;
+            
+            for (int i = 0; i < 3; i++)
+            {
+                var (pregunta, respuestaCorrecta) = GenerarPregunta();
+                Console.WriteLine($"Pregunta {i + 1}: {pregunta}");
+                
+                Console.WriteLine($"{jugador1.Nombre}, tu respuesta:");
+                bool respuestaJugador1 = EvaluarRespuesta(Console.ReadLine(), respuestaCorrecta);
+                
+                Console.WriteLine($"{jugador2.Nombre}, tu respuesta:");
+                bool respuestaJugador2 = EvaluarRespuesta(Console.ReadLine(), respuestaCorrecta);
+                
+                if (respuestaJugador1) puntajeJugador1++;
+                if (respuestaJugador2) puntajeJugador2++;
+            }
+            
+            Console.WriteLine($"Resultado del duelo: {jugador1.Nombre} {puntajeJugador1} - {puntajeJugador2} {jugador2.Nombre}");
+            
+            if (puntajeJugador1 > puntajeJugador2)
+            {
+                Console.WriteLine($"{jugador1.Nombre} gana el duelo!");
+                return true;
+            }
+            else if (puntajeJugador2 > puntajeJugador1)
+            {
+                Console.WriteLine($"{jugador2.Nombre} gana el duelo!");
+                return false;
+            }
+            else
+            {
+                Console.WriteLine("¡Empate! Se decidirá al azar.");
+                return random.Next(2) == 0;
+            }
+        }
+
+        private static (string pregunta, string respuestaCorrecta) GenerarPregunta()
+        {
+            string[][] preguntas = {
+                new[] {"¿Cuál es la capital de Francia?", "Paris"},
+                new[] {"¿En qué año comenzó la Segunda Guerra Mundial?", "1939"},
+                new[] {"¿Cuál es el planeta más grande del sistema solar?", "Jupiter"},
+                new[] {"¿Quién pintó la Mona Lisa?", "Leonardo da Vinci"},
+                new[] {"¿Cuál es el elemento químico más abundante en el universo?", "Hidrogeno"}
+            };
+            string[] preguntaSeleccionada = preguntas[random.Next(preguntas.Length)];
+            return (preguntaSeleccionada[0], preguntaSeleccionada[1]);
+        }
+
+        private static bool EvaluarRespuesta(string respuesta, string respuestaCorrecta)
+        {
+            return respuesta.Trim().Equals(respuestaCorrecta, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -196,16 +275,17 @@ namespace JuegoTablero
 
         private void InicializarJugadores()
         {
-            // Inicializar un jugador por cada casilla del tablero
-            int jugadorCount = 1;
-            for (int i = 0; i < tablero.Tamaño; i++)
+            Console.WriteLine("¿Cuántos jugadores van a participar?");
+            int numeroJugadores;
+            while (!int.TryParse(Console.ReadLine(), out numeroJugadores) || numeroJugadores < 2)
             {
-                for (int j = 0; j < tablero.Tamaño; j++)
-                {
-                    // Crea un jugador con nombre secuencial
-                    string nombreJugador = $"Jugador {jugadorCount++}";
-                    jugadores.Add(new Jugador(nombreJugador, i, j, tablero));
-                }
+                Console.WriteLine("Por favor, ingrese un número válido de jugadores (mínimo 2):");
+            }
+
+            for (int i = 0; i < numeroJugadores; i++)
+            {
+                string nombreJugador = $"Jugador {i + 1}";
+                jugadores.Add(new Jugador(nombreJugador));
             }
         }
 
@@ -222,9 +302,10 @@ namespace JuegoTablero
                     {
                         Console.Clear();
                         tablero.MostrarTablero();
+                        Console.WriteLine($"Turno de {jugador.Nombre}");
                         Console.WriteLine($"Casillas poseídas por {jugador.Nombre}: {jugador.CasillasPoseidas}");
 
-                        jugador.MostrarCasillasAdyacentes(tablero);
+                        jugador.MostrarCasillasDisponibles(tablero);
 
                         Console.WriteLine($"{jugador.Nombre}, ingresa las coordenadas a donde te quieres mover (formato: x y): ");
                         string[] coordenadas = Console.ReadLine().Split(' ');
@@ -232,10 +313,16 @@ namespace JuegoTablero
                         if (coordenadas.Length == 2 && int.TryParse(coordenadas[0], out int nuevaX) && int.TryParse(coordenadas[1], out int nuevaY))
                         {
                             movimientoValido = jugador.MoverA(nuevaX, nuevaY, tablero, jugadores);
+                            if (!movimientoValido)
+                            {
+                                Console.WriteLine("Movimiento inválido. Intenta de nuevo.");
+                                Console.ReadLine(); // Pausa para que el jugador pueda leer el mensaje
+                            }
                         }
                         else
                         {
                             Console.WriteLine("Coordenadas inválidas. Inténtalo de nuevo.");
+                            Console.ReadLine(); // Pausa para que el jugador pueda leer el mensaje
                         }
                     }
 
@@ -245,9 +332,14 @@ namespace JuegoTablero
                         jugadores.RemoveAt(i);
                         i--;
                     }
+
+                    Console.WriteLine("Presiona Enter para continuar al siguiente turno...");
+                    Console.ReadLine();
                 }
             }
 
+            Console.Clear();
+            tablero.MostrarTablero();
             Console.WriteLine($"¡{jugadores[0].Nombre} ha ganado el juego!");
         }
     }
